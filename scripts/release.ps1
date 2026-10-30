@@ -19,7 +19,9 @@ param(
     [string]$Notes = ""
 )
 
-$ErrorActionPreference = 'Stop'
+# 'Continue': git/gh escrevem progresso na saída de erro, o que o PowerShell 5.1 trataria como falha.
+# Cada comando é conferido pelo código de saída (Check), e os erros reais usam throw.
+$ErrorActionPreference = 'Continue'
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 
