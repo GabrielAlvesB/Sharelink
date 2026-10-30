@@ -82,6 +82,9 @@ public sealed class AppSettings
     public HotkeySettings Hotkeys { get; set; } = new();
 
     public bool ShowGalleryOnStartup { get; set; } = true;
+
+    /// <summary>Verificar e baixar atualizações automaticamente (a instalação sempre pede confirmação).</summary>
+    public bool AutoUpdate { get; set; } = true;
     public bool TrayHintShown { get; set; }
 
     // Cloudflare R2. As chaves NÃO ficam aqui: vão para o Gerenciador de Credenciais do Windows.

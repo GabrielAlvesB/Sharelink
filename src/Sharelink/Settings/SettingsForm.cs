@@ -5,6 +5,7 @@ using Sharelink.Hotkeys;
 using Sharelink.Output;
 using Sharelink.Recording;
 using Sharelink.Theme;
+using Sharelink.Update;
 using Sharelink.Upload;
 using Sharelink.Upload.Providers;
 
@@ -54,6 +55,9 @@ internal sealed class SettingsForm : ThemedForm
     // Aparência e sistema
     private readonly ComboBox _theme = Combo(220);
     private readonly CheckBox _showGallery = Check("Abrir a galeria ao iniciar o Sharelink");
+    private readonly CheckBox _autoUpdate = Check("Verificar e baixar atualizações automaticamente (a instalação sempre pede seu clique)");
+    private readonly Label _updateStatus = new() { AutoSize = true, MaximumSize = new Size(520, 0), UseMnemonic = false };
+    private readonly Func<Task<string>>? _checkUpdates;
     private readonly CheckBox _startup = Check("Iniciar o Sharelink junto com o Windows (abre só na bandeja)");
 
     // Captura
@@ -134,9 +138,10 @@ internal sealed class SettingsForm : ThemedForm
     public AppSettings Result => _settings;
 
     /// <param name="settings">Uma cópia: só é aplicada se o usuário clicar em Salvar.</param>
-    public SettingsForm(AppSettings settings, bool openLinksTab = false)
+    public SettingsForm(AppSettings settings, bool openLinksTab = false, Func<Task<string>>? checkUpdates = null)
     {
         _settings = settings;
+        _checkUpdates = checkUpdates;
 
         Text = "Sharelink: configurações";
         StartPosition = FormStartPosition.CenterScreen;
@@ -156,6 +161,7 @@ internal sealed class SettingsForm : ThemedForm
         AddPage(nav, "Atalhos", Glyphs.Keyboard, BuildHotkeysPage());
         AddPage(nav, "Gravação", Glyphs.Record, BuildRecordingPage());
         AddPage(nav, "Links e upload", Glyphs.Link, BuildLinksPage());
+        AddPage(nav, "Atualizações", Glyphs.Refresh, BuildUpdatesPage());
         AddPage(nav, "Privacidade", Glyphs.Shield, BuildPrivacyPage());
 
         // ---------- Rodapé ----------
@@ -591,6 +597,34 @@ internal sealed class SettingsForm : ThemedForm
         return t;
     }
 
+    private Control BuildUpdatesPage()
+    {
+        ModernButton check = SmallButton("Verificar agora", Glyphs.Refresh, ButtonVariant.Primary);
+        check.Enabled = _checkUpdates is not null;
+        check.Click += async (_, _) =>
+        {
+            check.Enabled = false;
+            _updateStatus.ForeColor = ThemeManager.Current.Text;
+            _updateStatus.Text = "Verificando…";
+            _updateStatus.Text = await _checkUpdates!();
+            check.Enabled = true;
+        };
+
+        TableLayoutPanel t = NewTable();
+        AddRow(t, "Versão instalada:", new Label { Text = AppVersion.CurrentText, AutoSize = true, Font = new Font("Segoe UI Semibold", 10f) });
+        AddRow(t, null, _autoUpdate);
+        AddRow(t, null, Inline(check));
+        AddRow(t, null, _updateStatus);
+        AddRow(t, null, WebLink("Ver todas as versões no GitHub", $"https://github.com/{GitHubUpdateClient.Owner}/{GitHubUpdateClient.Repository}/releases"));
+        AddRow(t, null, Muted(
+            "Como funciona: o Sharelink consulta as versões publicadas no GitHub ao abrir e a cada 6 horas. Quando encontra uma nova, " +
+            "baixa em segundo plano e confere a ASSINATURA DIGITAL do instalador. Se a assinatura não bater, o arquivo é apagado na hora. " +
+            "A chave que assina as versões fica só no computador de quem publica, então nem uma conta do GitHub invadida consegue " +
+            "distribuir uma atualização falsa.\n\nQuando a versão estiver pronta, aparece um aviso na galeria e na bandeja. " +
+            "Ao clicar em \"Atualizar agora\", o Sharelink fecha, instala e reabre sozinho."));
+        return t;
+    }
+
     private Control BuildPrivacyPage()
     {
         ModernButton openData = SmallButton("Abrir pasta de configurações e log", Glyphs.Folder);
@@ -607,7 +641,8 @@ internal sealed class SettingsForm : ThemedForm
             MaximumSize = new Size(560, 0),
             Text = "Nada sai do seu computador, a não ser quando você pede \"Gerar link\". Nesse caso o arquivo vai apenas para o destino " +
                    "escolhido em \"Links e upload\".\n\n" +
-                   "• Sem telemetria, sem atualização automática e sem nenhum pacote de terceiros.\n" +
+                   "• A única consulta automática é a verificação de versão nova no GitHub (pode desligar em Atualizações).\n" +
+                   "• Sem telemetria e sem nenhum pacote de terceiros. Atualizações só são aceitas com assinatura digital válida.\n" +
                    "• Senhas e chaves ficam criptografadas no Gerenciador de Credenciais do Windows.\n" +
                    "• Toda conexão é HTTPS, sem redirecionamentos, e só para o servidor configurado.\n" +
                    "• Só imagens (PNG, JPG, GIF) e vídeos MP4 podem ser enviados, com nomes aleatórios.\n" +
@@ -627,6 +662,7 @@ internal sealed class SettingsForm : ThemedForm
         _theme.SelectedIndex = Math.Max(0, Array.FindIndex(ThemeOptions, o => o.Value == _settings.Theme));
         _showGallery.Checked = _settings.ShowGalleryOnStartup;
         _startup.Checked = StartupManager.IsEnabled();
+        _autoUpdate.Checked = _settings.AutoUpdate;
 
         _openEditor.Checked = _settings.OpenEditorAfterCapture;
         _saveToFile.Checked = _settings.SaveToFile;
@@ -938,6 +974,7 @@ internal sealed class SettingsForm : ThemedForm
 
         _settings.Theme = ThemeOptions[Math.Max(0, _theme.SelectedIndex)].Value;
         _settings.ShowGalleryOnStartup = _showGallery.Checked;
+        _settings.AutoUpdate = _autoUpdate.Checked;
 
         _settings.OpenEditorAfterCapture = _openEditor.Checked;
         _settings.SaveToFile = _saveToFile.Checked;

@@ -36,6 +36,55 @@ internal static class SecureHttp
         return await Client.SendAsync(request, ct);
     }
 
+    /// <summary>
+    /// Baixa um arquivo público para o disco. Segue redirecionamentos SOMENTE para hosts da lista
+    /// (ex.: github.com → servidor de arquivos do GitHub), no máximo 5 vezes, e corta acima de <paramref name="maxBytes"/>.
+    /// </summary>
+    public static async Task DownloadToFileAsync(Uri url, IReadOnlyCollection<string> allowedHosts, string destination, long maxBytes,
+        string userAgent, CancellationToken ct)
+    {
+        Uri current = url;
+        for (int hop = 0; hop <= 5; hop++)
+        {
+            if (!allowedHosts.Contains(current.IdnHost, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Bloqueado: download a partir de host não permitido ({current.Host}).");
+            EnsureAllowed(current, current.IdnHost);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            request.Headers.UserAgent.ParseAdd(userAgent);
+            using HttpResponseMessage response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+
+            if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is Uri location)
+            {
+                current = location.IsAbsoluteUri ? location : new Uri(current, location);
+                continue;
+            }
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"o servidor respondeu {(int)response.StatusCode}.");
+            if (response.Content.Headers.ContentLength > maxBytes)
+                throw new InvalidOperationException("arquivo maior que o permitido.");
+
+            string temp = destination + ".parcial";
+            await using (Stream source = await response.Content.ReadAsStreamAsync(ct))
+            await using (var target = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                byte[] buffer = new byte[81920];
+                long total = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer, ct)) > 0)
+                {
+                    total += read;
+                    if (total > maxBytes)
+                        throw new InvalidOperationException("arquivo maior que o permitido.");
+                    await target.WriteAsync(buffer.AsMemory(0, read), ct);
+                }
+            }
+            File.Move(temp, destination, overwrite: true);
+            return;
+        }
+        throw new InvalidOperationException("redirecionamentos demais.");
+    }
+
     /// <summary>Confere se um link público responde (GET sem nenhuma credencial).</summary>
     public static async Task<int> ProbePublicUrlAsync(Uri url, CancellationToken ct)
     {

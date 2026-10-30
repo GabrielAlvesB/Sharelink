@@ -7,6 +7,7 @@ using Sharelink.Output;
 using Sharelink.Recording;
 using Sharelink.Settings;
 using Sharelink.Theme;
+using Sharelink.Update;
 using Sharelink.Upload;
 
 namespace Sharelink;
@@ -29,6 +30,8 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
     private bool _busy;
     private bool _stoppingRecording;
     private string? _balloonFile;
+    private bool _balloonIsUpdate;
+    private readonly UpdateService _updates;
 
     public TrayApplication(bool startMinimized)
     {
@@ -38,6 +41,8 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
         _links = new LinkService(() => _settings, TrySaveSettings, new LinkStore(LinkStore.DefaultPath), () => ShowSettings(openLinksTab: true));
         _output = new CaptureOutput(() => _settings, _links, Notify);
         _output.FileSaved += _ => _main?.ScheduleRefresh();
+        _updates = new UpdateService(() => _settings);
+        _updates.UpdateReady += OnUpdateReady;
 
         _tray = new NotifyIcon { Icon = AppIcon.Get(), Text = "Sharelink", Visible = true };
         _tray.MouseClick += (_, e) =>
@@ -45,7 +50,13 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
             if (e.Button == MouseButtons.Left)
                 ShowMainWindow();
         };
-        _tray.BalloonTipClicked += (_, _) => RevealFile(_balloonFile);
+        _tray.BalloonTipClicked += (_, _) =>
+        {
+            if (_balloonIsUpdate)
+                InstallUpdate();
+            else
+                RevealFile(_balloonFile);
+        };
         _recorder.Failed += message =>
         {
             CloseOverlay();
@@ -67,6 +78,38 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
         if (failed.Count > 0)
             ShowError("Atalhos indisponíveis",
                 $"Estes atalhos já estão em uso por outro programa: {string.Join(", ", failed)}.\nTroque-os em Configurações › Atalhos.");
+
+        _updates.Start();
+    }
+
+    // ---------- Atualizações ----------
+
+    private void OnUpdateReady(ReleaseInfo release)
+    {
+        RebuildMenu();
+        _main?.ShowUpdateBanner(release.VersionText);
+        _balloonIsUpdate = true;
+        _balloonFile = null;
+        _tray.ShowBalloonTip(10000, $"Sharelink {release.VersionText} disponível",
+            "A atualização já foi baixada e verificada. Clique aqui para instalar (o Sharelink reabre sozinho).", ToolTipIcon.Info);
+    }
+
+    public void InstallUpdate() => Run(async () =>
+    {
+        if (_updates.Ready is not ReleaseInfo release)
+            return;
+        if (_recorder.IsRecording)
+            await StopRecordingAsync();
+        if (await _updates.InstallAsync())
+            await ExitAsync();
+        else
+            ShowError("Não foi possível instalar", $"Baixe a versão {release.VersionText} em {release.Page}");
+    });
+
+    private async Task<string> CheckUpdatesAsync()
+    {
+        string message = await _updates.CheckAsync(userInitiated: true);
+        return message;
     }
 
     // ---------- Janela principal ----------
@@ -77,6 +120,8 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
         {
             _main = new MainForm(this, () => _settings, _links);
             _main.HiddenToTray += OnMainHidden;
+            if (_updates.Ready is ReleaseInfo ready)
+                _main.ShowUpdateBanner(ready.VersionText);
         }
         if (!_main.Visible)
             _main.Show();
@@ -120,7 +165,9 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
         bool recording = _recorder.IsRecording;
         var menu = new ContextMenuStrip();
 
-        menu.Items.Add(Item("Abrir Sharelink", Glyphs.Image, null, ShowMainWindow, bold: true));
+        if (_updates.Ready is ReleaseInfo update)
+            menu.Items.Add(Item($"Instalar atualização {update.VersionText}", Glyphs.Upload, null, InstallUpdate, bold: true));
+        menu.Items.Add(Item("Abrir Sharelink", Glyphs.Image, null, ShowMainWindow, bold: _updates.Ready is null));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Item("Capturar região", Glyphs.Camera, hk.CaptureRegion, () => AfterMenu(() => CaptureRegionAsync(false))));
         menu.Items.Add(Item("Capturar e gerar link", Glyphs.Link, hk.CaptureAndLink, () => AfterMenu(() => CaptureRegionAsync(true))));
@@ -138,6 +185,12 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Item("Abrir pasta de capturas", Glyphs.Folder, null, OpenOutputFolder));
         menu.Items.Add(Item("Configurações…", Glyphs.Settings, null, () => ShowSettings(false)));
+        menu.Items.Add(Item("Verificar atualizações", Glyphs.Refresh, null, async () =>
+        {
+            string message = await CheckUpdatesAsync();
+            if (message.Length > 0 && _updates.Ready is null)
+                Notify("Atualizações", message, ToolTipIcon.Info, null);
+        }));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Item("Sair", Glyphs.Close, null, () => _ = ExitAsync()));
         ThemeManager.Apply(menu);
@@ -378,12 +431,14 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
         if (!_settings.ShowNotification && icon == ToolTipIcon.Info)
             return;
         _balloonFile = fileToReveal;
+        _balloonIsUpdate = false;
         _tray.ShowBalloonTip(3000, title, string.IsNullOrEmpty(text) ? " " : text, icon);
     }
 
     private void ShowError(string title, string message)
     {
         _balloonFile = null;
+        _balloonIsUpdate = false;
         _tray.ShowBalloonTip(8000, title, message.Length > 250 ? message[..250] + "…" : message, ToolTipIcon.Error);
     }
 
@@ -417,7 +472,7 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
         }
 
         string oldFolder = _settings.OutputFolder;
-        using var form = new SettingsForm(SettingsStore.Clone(_settings), openLinksTab);
+        using var form = new SettingsForm(SettingsStore.Clone(_settings), openLinksTab, CheckUpdatesAsync);
         _settingsForm = form;
         try
         {
@@ -471,6 +526,7 @@ internal sealed class TrayApplication : ApplicationContext, IAppCommands
         {
             ThemeManager.Changed -= RebuildMenu;
             _hotkeys.Dispose();
+            _updates.Dispose();
             _overlay?.Dispose();
             _main?.Dispose();
             _tray.Visible = false;

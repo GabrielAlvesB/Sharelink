@@ -12,7 +12,23 @@ internal static class AppIcon
 
     private static Icon Create(int size)
     {
-        using var bmp = new Bitmap(size, size);
+        using Bitmap bmp = Render(size);
+        IntPtr hIcon = bmp.GetHicon();
+        try
+        {
+            using Icon temp = Icon.FromHandle(hIcon);
+            return (Icon)temp.Clone();
+        }
+        finally
+        {
+            NativeMethods.DestroyIcon(hIcon);
+        }
+    }
+
+    /// <summary>Desenha o ícone no tamanho pedido (também usado para gerar o .ico do instalador).</summary>
+    public static Bitmap Render(int size)
+    {
+        var bmp = new Bitmap(size, size);
         using (Graphics g = Graphics.FromImage(bmp))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -35,17 +51,7 @@ internal static class AppIcon
             float r = size * 0.09f;
             g.FillEllipse(dot, size / 2f - r, size / 2f - r, r * 2, r * 2);
         }
-
-        IntPtr hIcon = bmp.GetHicon();
-        try
-        {
-            using Icon temp = Icon.FromHandle(hIcon);
-            return (Icon)temp.Clone();
-        }
-        finally
-        {
-            NativeMethods.DestroyIcon(hIcon);
-        }
+        return bmp;
     }
 
     public static GraphicsPath RoundedRect(RectangleF r, float radius)

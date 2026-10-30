@@ -37,7 +37,7 @@ Cada destino tem um guia passo a passo na própria tela e um botão **Testar con
 Links já criados lembram onde foram enviados, então dá para apagá-los mesmo depois de trocar o destino.
 
 ## Segurança
-- **Rede isolada:** só a pasta `src/Sharelink/Upload/Providers/` tem acesso à internet. O resto do app não consegue nem usar HTTP, porque o using implícito foi removido no csproj.
+- **Rede isolada:** só a pasta `src/Sharelink/Upload/Providers/` e o `Update/GitHubUpdateClient.cs` têm acesso à internet. O resto do app não consegue nem usar HTTP, porque o using implícito foi removido no csproj.
 - **Conexões travadas:** toda requisição passa por `SecureHttp`, que só aceita HTTPS para o host exato do destino configurado, sem redirecionamentos, sem cookies e sem usuário/senha na URL. O R2 sempre usa o host fixo da Cloudflare.
 - **Chaves guardadas no Windows:** chaves, Client ID e senhas de aplicativo ficam no **Gerenciador de Credenciais**, criptografadas por usuário, e nunca no `settings.json` nem no log.
 - **Respostas conferidas:** os links devolvidos pelo Imgur e pelo Nextcloud são validados (https e domínio esperado), e só identificadores no formato que o próprio Sharelink gera podem ser apagados.
@@ -45,16 +45,44 @@ Links já criados lembram onde foram enviados, então dá para apagá-los mesmo 
 - **Só tipos seguros:** apenas `.png .jpg .gif .mp4` podem ser enviados, nunca HTML/SVG/scripts.
 - **Integridade:** o SHA-256 do arquivo faz parte da assinatura AWS SigV4, que é validada nos testes contra o exemplo oficial da AWS.
 - **Upload só quando você pede:** o app pede confirmação, que dá para desligar.
-- **Sem dependências de terceiros:** nenhum pacote NuGet no app, sem telemetria e sem atualização automática.
+- **Sem dependências de terceiros:** nenhum pacote NuGet no app e sem telemetria. Atualizações só com assinatura digital válida.
 - **Dados sensíveis:** para esconder dados num print, use **Pixelar**, que descarta a informação original.
 
-## Compilar e rodar
-Pré-requisito: .NET SDK 10 (`winget install Microsoft.DotNet.SDK.10`). Para gravar a tela: `winget install Gyan.FFmpeg`.
+## Instalar
+Baixe o `Sharelink-Setup-X.Y.Z.exe` mais recente em [Releases](https://github.com/GabrielAlvesB/Sharelink/releases) e execute.
+- Instala só para o seu usuário, sem pedir administrador, e já inclui o .NET (não precisa instalar nada antes).
+- Para gravar a tela, instale também o FFmpeg: `winget install Gyan.FFmpeg`.
+
+## Atualizações automáticas
+O Sharelink verifica as releases deste repositório ao abrir e a cada 6 horas. Quando há versão nova, ele:
+1. baixa o instalador e o arquivo `.sig` em segundo plano;
+2. **confere a assinatura digital** (ECDSA P-256). Se não bater, apaga o arquivo;
+3. avisa na galeria e na bandeja. Ao clicar em **Atualizar agora**, o app fecha, instala em modo silencioso e reabre.
+
+A chave privada que assina as versões fica **só no PC de quem publica** (Gerenciador de Credenciais), e o app traz apenas a chave pública ([UpdatePublicKey.cs](src/Sharelink/Update/UpdatePublicKey.cs)). Mesmo com a conta do GitHub invadida, ninguém consegue publicar uma atualização que o app aceite. Dá para desligar a verificação em Configurações › Atualizações.
+
+## Publicar uma versão nova (mantenedor)
+Pré-requisitos: .NET SDK 10, [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`), GitHub CLI logado (`gh auth login`) e a chave de assinatura neste PC.
+
+```powershell
+.\scripts\release.ps1 -Version 1.1.0 -Notes "O que mudou nesta versão"
+```
+O script roda os testes, gera o app com o .NET embutido, cria o instalador, assina, faz commit da versão, cria a tag `v1.1.0` e publica a release.
+
+**Chave de assinatura** (`tools/ReleaseTool`):
+```powershell
+dotnet run --project tools/ReleaseTool -- export-key C:\caminho\backup.key   # BACKUP: guarde num lugar seguro e apague o arquivo
+dotnet run --project tools/ReleaseTool -- import-key C:\caminho\backup.key   # restaurar em outro PC
+dotnet run --project tools/ReleaseTool -- check-release                       # confere a release publicada como o app faz
+```
+Se a chave privada for perdida, os apps instalados deixam de aceitar atualizações e será preciso reinstalar manualmente uma versão com chave nova.
+
+## Compilar e rodar (desenvolvimento)
+Pré-requisito: .NET SDK 10 (`winget install Microsoft.DotNet.SDK.10`).
 
 ```powershell
 dotnet test                                    # testes automatizados
 dotnet run --project src/Sharelink             # modo desenvolvimento
-dotnet publish src/Sharelink -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
 ## Estrutura
@@ -65,7 +93,11 @@ src/Sharelink/
   Controls/            componentes visuais (botões, galeria, busca, prévia)
   Gallery/             janela principal (galeria), miniaturas
   Upload/              destinos de link, credenciais, registro de links
-    Providers/         ÚNICA parte com rede: S3/R2, Imgur, WebDAV, SecureHttp
+    Providers/         rede dos destinos: S3/R2/Supabase, Imgur, WebDAV, SecureHttp
+  Update/              atualização automática (GitHubUpdateClient é a única outra parte com rede)
+tools/ReleaseTool/     chaves de assinatura, assinatura do instalador, ícone
+installer/             script do instalador (Inno Setup)
+scripts/release.ps1    publica uma versão nova
   Capture/             captura e seletor de região
   Editor/              editor de anotações
   Recording/           gravação via FFmpeg

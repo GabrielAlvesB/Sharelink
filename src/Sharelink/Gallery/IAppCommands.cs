@@ -11,4 +11,5 @@ internal interface IAppCommands
     void EditFile(string path);
     void OpenOutputFolder();
     void ShowSettings(bool openLinksTab);
+    void InstallUpdate();
 }

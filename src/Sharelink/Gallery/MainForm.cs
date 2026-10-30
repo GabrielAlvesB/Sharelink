@@ -30,6 +30,8 @@ internal sealed class MainForm : ThemedForm
     private readonly ModernButton[] _chips;
     private readonly Label _countLabel;
     private readonly ContextMenuStrip _itemMenu;
+    private readonly Panel _updateBanner;
+    private readonly Label _updateLabel;
 
     private readonly PreviewBox _preview;
     private readonly Label _title;
@@ -85,6 +87,19 @@ internal sealed class MainForm : ThemedForm
         folderButton.Dock = DockStyle.Right;
         // O último adicionado encaixa primeiro: logo na ponta esquerda, configurações na ponta direita.
         header.Controls.AddRange([_search, Spacer(8), folderButton, Spacer(4), settingsButton, appName, logo]);
+
+        // ---------- Aviso de atualização (escondido até haver uma) ----------
+        _updateBanner = new Panel { Dock = DockStyle.Top, Height = 48, Padding = new Padding(20, 8, 20, 8), Visible = false };
+        _updateBanner.Paint += (_, e) =>
+        {
+            Palette p = ThemeManager.Current;
+            e.Graphics.Clear(Color.FromArgb(p.IsDark ? 45 : 30, p.Accent));
+        };
+        _updateLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false };
+        var updateButton = new ModernButton { Text = "Atualizar agora", Glyph = Glyphs.Upload, Variant = ButtonVariant.Primary, Dock = DockStyle.Right, Height = 32, AutoWidth = true };
+        updateButton.Click += (_, _) => _commands.InstallUpdate();
+        _updateBanner.Controls.Add(_updateLabel);
+        _updateBanner.Controls.Add(updateButton);
 
         // ---------- Ações ----------
         var actions = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 62, Padding = new Padding(18, 14, 18, 8), WrapContents = false };
@@ -188,6 +203,7 @@ internal sealed class MainForm : ThemedForm
         Controls.Add(body);
         Controls.Add(filterBar);
         Controls.Add(actions);
+        Controls.Add(_updateBanner);
         Controls.Add(header);
 
         _refreshTimer.Tick += (_, _) =>
@@ -198,6 +214,12 @@ internal sealed class MainForm : ThemedForm
         _links.Store.Changed += OnLinkChanged;
 
         UpdateDetails();
+    }
+
+    public void ShowUpdateBanner(string version)
+    {
+        _updateLabel.Text = $"Sharelink {version} já foi baixado e verificado. Clique em \"Atualizar agora\": o app fecha, instala e reabre sozinho.";
+        _updateBanner.Visible = true;
     }
 
     // ---------- Montagem da interface ----------

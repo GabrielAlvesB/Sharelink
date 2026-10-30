@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Sharelink: captura de tela pessoal, 100% local.
+    Sharelink: captura de tela pessoal e segura.
     Regra de segurança: este projeto NÃO tem PackageReference. Tudo vem do .NET e da API do Windows.
   -->
   <PropertyGroup>
@@ -19,9 +19,15 @@
     <SatelliteResourceLanguages>pt-BR</SatelliteResourceLanguages>
   </PropertyGroup>
 
+  <!-- O .ico é gerado pelo próprio código do app (tools/ReleaseTool icon). -->
+  <PropertyGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\assets\Sharelink.ico')">
+    <ApplicationIcon>$(MSBuildThisFileDirectory)..\..\assets\Sharelink.ico</ApplicationIcon>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Sharelink.Tests" />
-    <!-- Sem código de rede: nem o using implícito de HTTP fica disponível. -->
+    <InternalsVisibleTo Include="ReleaseTool" />
+    <!-- Rede só onde é declarada explicitamente (Upload/Providers e Update/GitHubUpdateClient.cs). -->
     <Using Remove="System.Net.Http" />
   </ItemGroup>
 
