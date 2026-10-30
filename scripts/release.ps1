@@ -71,8 +71,11 @@ catch {
 }
 
 Step "Commit, tag e envio"
-git add $csproj
-git commit -m "Versão $Version"; Check "git commit"
+git diff --quiet -- $csproj
+if ($LASTEXITCODE -ne 0) {
+    git add $csproj
+    git commit -m "Versão $Version"; Check "git commit"
+}
 git tag -a $tag -m "Sharelink $Version"; Check "git tag"
 git push origin main $tag; Check "git push"
 
