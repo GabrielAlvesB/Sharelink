@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Sharelink: captura de tela pessoal, 100% local.
+    Regra de segurança: este projeto NÃO tem PackageReference. Tudo vem do .NET e da API do Windows.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+    <RootNamespace>Sharelink</RootNamespace>
+    <AssemblyName>Sharelink</AssemblyName>
+    <Version>1.0.0</Version>
+    <Product>Sharelink</Product>
+    <SatelliteResourceLanguages>pt-BR</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sharelink.Tests" />
+    <!-- Sem código de rede: nem o using implícito de HTTP fica disponível. -->
+    <Using Remove="System.Net.Http" />
+  </ItemGroup>
+
+</Project>
